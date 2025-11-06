@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>不凡不平凡制作</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Microsoft YaHei", sans-serif; }
+        .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
+        .form-group { margin: 15px 0; display: flex; align-items: center; gap: 10px; }
+        label { width: 120px; font-weight: bold; }
+        input { padding: 8px 10px; flex: 1; max-width: 400px; border: 1px solid #ddd; border-radius: 4px; }
+        .btn-group { margin: 20px 0; }
+        button { padding: 10px 20px; margin-right: 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        #startBtn { background: #28a745; color: white; }
+        #stopBtn { background: #dc3545; color: white; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 4px; background: #e9ecef; font-size: 14px; }
+        #logContainer { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 4px; height: 400px; overflow-y: auto; background: #f8f9fa; font-size: 14px; line-height: 1.6; }
+        .log-success { color: #28a745; }
+        .log-error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ddos</h1>
+        <div class="status" id="status">状态：未启动</div>
+        
+        <div class="form-group">
+            <label>目标地址：</label>
+            <input type="text" id="target" placeholder="输入网址（如https://www.baidu.com）或IP" value="">
+        </div>
+        <div class="form-group">
+            <label>访问间隔（秒）：</label>
+            <input type="number" id="interval" min="0" value="1" placeholder="每次访问间隔，0为无间隔">
+        </div>
+        
+        <div class="btn-group">
+            <button id="startBtn">启动无限访问</button>
+            <button id="stopBtn">停止访问</button>
+        </div>
+        
+        <!-- 实时日志区域 -->
+        <h3>实时访问日志</h3>
+        <div id="logContainer"></div>
+    </div>
+
+    <script>
+        let logOffset = 0;
+        let logPollInterval;
+
+        // 启动访问（提交目标地址到PHP）
+        document.getElementById('startBtn').addEventListener('click', () => {
+            const target = document.getElementById('target').value.trim();
+            const interval = document.getElementById('interval').value.trim();
+
+            if (!target) {
+                alert('请输入目标地址！');
+                return;
+            }
+            if (isNaN(interval) || interval < 0) {
+                alert('间隔必须为非负数字！');
+                return;
+            }
+
+            // 调用PHP接口启动Python脚本
+            fetch(`api.php?action=start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `target=${encodeURIComponent(target)}&interval=${interval}`
+            })
+            .then(res => res.text())
+            .then(msg => {
+                document.getElementById('status').textContent = `状态：运行中 - ${msg}`;
+                alert(msg);
+                // 启动日志实时轮询
+                startLogPolling();
+            })
+            .catch(err => {
+                alert('启动失败：' + err.message);
+            });
+        });
+
+        // 停止访问
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            fetch(`api.php?action=stop`)
+            .then(res => res.text())
+            .then(msg => {
+                document.getElementById('status').textContent = `状态：已停止 - ${msg}`;
+                alert(msg);
+                clearInterval(logPollInterval);
+            })
+            .catch(err => {
+                alert('停止失败：' + err.message);
+            });
+        });
+
+        // 实时轮询日志
+        function startLogPolling() {
+            clearInterval(logPollInterval);
+            logPollInterval = setInterval(() => {
+                fetch(`get_log.php?offset=${logOffset}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.log) {
+                        const formattedLog = formatLog(data.log);
+                        document.getElementById('logContainer').innerHTML += formattedLog;
+                        // 滚动到最新日志
+                        const logBox = document.getElementById('logContainer');
+                        logBox.scrollTop = logBox.scrollHeight;
+                        logOffset = data.offset;
+                    }
+                });
+            }, 1000);
+        }
+
+        // 格式化日志（区分成功/失败）
+        function formatLog(logText) {
+            return logText
+                .replace(/\[(.+?)\] 访问成功 (.+?)\n/g, '<div><span class="log-success">[$1] 访问成功：$2</span></div>')
+                .replace(/\[(.+?)\] 访问失败 (.+?)\n/g, '<div><span class="log-error">[$1] 访问失败：$2</span></div>')
+                .replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
